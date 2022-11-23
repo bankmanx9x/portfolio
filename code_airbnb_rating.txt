@@ -1,0 +1,108 @@
+# portfolio
+SQL code for airbnb_new york price rating.
+
+/* 
+Step 1 with table 01_raw_airbnb_map (file: 02 airbnb_dataset.csv)
+Alias neighbourhood_group to borought and room_type to type.
+Create new table name 01_rename.
+*/
+
+CREATE TABLE IF NOT EXISTS `your_project_name.your_dataset.01_rename` AS (
+SELECT  id,
+        neighbourhood_group AS borought,
+        latitude,  
+        longitude,
+        room_type AS type,
+        price
+FROM `your_project_name.your_dataset.01_raw_airbnb_map`
+ORDER BY id);
+
+/* 
+Step 2 with table 01_rename
+Separate price to four quartile by borought and type.
+Create new table name 02_quartile
+*/
+
+CREATE TABLE IF NOT EXISTS `your_project_name.your_dataset.02_quartile` AS (
+  SELECT  id,
+          borought,
+          type,
+          price,
+          NTILE(4) OVER (PARTITION BY borought, type ORDER BY price ASC) quartile
+  FROM `your_project_name.your_dataset.01_rename`
+  ORDER BY id);
+
+/* 
+Step 3 with table 02_quartile
+Create column limit_lo and limit_hi by use interquartile range in statistics.
+Create new table name 03_limit
+*/
+
+CREATE TABLE IF NOT EXISTS `your_project_name.your_dataset.03_limit` AS (
+WITH quartile1 as (
+SELECT  borought,
+        type,
+        MAX(price) as quart1
+FROM `your_project_name.your_dataset.02_quartile` 
+WHERE quartile = 1
+GROUP BY borought, type
+),
+quartile3 as (
+SELECT  borought,
+        type,
+        MAX(price) as quart3
+FROM `your_project_name.your_dataset.02_quartile` 
+WHERE quartile = 3
+GROUP BY borought, type
+) 
+
+SELECT  quartile1.borought,
+        quartile1.type,
+        quart1 - 1.5*(quart3 - quart1) AS limit_lo,
+        quart1,
+        quart3,
+        quart3 + 1.5*(quart3 - quart1) AS limit_hi
+FROM quartile1
+INNER JOIN quartile3
+ON quartile1.borought = quartile3.borought
+  AND quartile1.type = quartile3.type
+ORDER BY borought, type);
+
+/* 
+Step 3 with table 03_limit
+Rating price use case when in sql to compare price between limit_lo, quart1, quart3 and limit_higi.
+Create new table name 04_result
+*/
+
+CREATE TABLE IF NOT EXISTS `your_project_name.your_dataset.04_result` AS (
+WITH cte as (
+SELECT  id,
+        original.borought,
+        original.type,
+        latitude,  
+        longitude,
+        price,
+        limit_lo,
+        quart1,
+        quart3,
+        limit_hi
+FROM `your_project_name.your_dataset.01_rename` AS original
+INNER JOIN `your_project_name.your_dataset.03_limit`AS compare
+ON original.borought = compare.borought
+  AND original.type = compare.type
+ORDER BY id
+)
+SELECT  id,
+        borought,
+        type,
+        latitude,  
+        longitude,
+        price,
+        CASE 
+          WHEN price <  limit_lo  THEN "very low"
+          WHEN price >= limit_lo  AND price < quart1    THEN "low"
+          WHEN price >= quart1    AND price < quart3    THEN "regular"
+          WHEN price >= quart3    AND price < limit_hi  THEN "high"
+          ELSE "very high" END AS rating
+FROM cte
+ORDER BY id);
