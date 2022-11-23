@@ -69,7 +69,7 @@ ON quartile1.borought = quartile3.borought
 ORDER BY borought, type);
 
 /* 
-Step 3 with table 03_limit
+Step 4 with table 03_limit
 Rating price use case when in sql to compare price between limit_lo, quart1, quart3 and limit_higi.
 Create new table name 04_result
 */
